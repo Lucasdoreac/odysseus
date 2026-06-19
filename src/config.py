@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, AliasChoices
 
 from src.constants import DATA_DIR as _DATA_DIR_CONST
 from src.runtime_paths import get_app_root
@@ -32,7 +32,6 @@ class DataConfig(BaseSettings):
     runbook_dir: Path = Field(default=Path(_DATA_DIR_CONST) / "personal_docs" / "runbook", description="Runbook directory")
     
     # Upload settings
-    max_upload_size: int = Field(default=10 * 1024 * 1024, description="Maximum upload size in bytes (10MB)")
     allowed_extensions: List[str] = Field(
         default=[
             '.txt', '.py', '.html', '.md', '.json', '.csv',
@@ -100,7 +99,6 @@ class SecurityConfig(BaseSettings):
     
     # Security settings
     allowed_origins: List[str] = Field(default=["*"], description="Allowed origins for CORS")
-    max_file_size: int = Field(default=10 * 1024 * 1024, description="Maximum file size in bytes")
     dangerous_file_types: List[str] = Field(
         default=[
             'application/x-executable', 'application/x-sharedlib',
@@ -120,13 +118,71 @@ class SecurityConfig(BaseSettings):
     
     model_config = SettingsConfigDict(env_prefix="SECURITY_")
 
+class UploadConfig(BaseSettings):
+    """Consolidated upload byte-limits (issue #3364)."""
+    chat: int = Field(
+        default=10 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices(
+            "ODYSSEUS_CHAT_UPLOAD_MAX_BYTES",
+            "DATA_MAX_UPLOAD_SIZE",
+            "SECURITY_MAX_FILE_SIZE",
+        ),
+        description="Chat/agent attachment cap in bytes"
+    )
+    gallery: int = Field(
+        default=100 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_GALLERY_UPLOAD_MAX_BYTES"),
+        description="Gallery image upload cap in bytes"
+    )
+    gallery_transform: int = Field(
+        default=25 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES"),
+        description="Gallery transform input cap in bytes"
+    )
+    memory_import: int = Field(
+        default=10 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_MEMORY_IMPORT_MAX_BYTES"),
+        description="Memory import file cap in bytes"
+    )
+    personal: int = Field(
+        default=25 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES"),
+        description="Personal document upload cap in bytes"
+    )
+    email_compose: int = Field(
+        default=25 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES"),
+        description="Email compose attachment cap in bytes"
+    )
+    stt: int = Field(
+        default=25 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_STT_MAX_AUDIO_BYTES"),
+        description="Speech-to-text audio cap in bytes"
+    )
+    ics: int = Field(
+        default=10 * 1024 * 1024,
+        gt=0,
+        validation_alias=AliasChoices("ODYSSEUS_ICS_MAX_BYTES"),
+        description="Calendar .ics import cap in bytes"
+    )
+
+    model_config = SettingsConfigDict(env_prefix="UPLOAD_")
+
 class AppConfig(BaseSettings):
     """Main application configuration combining all components."""
     
-    data: DataConfig = DataConfig()
-    llm: LLMConfig = LLMConfig()
-    search: SearchConfig = SearchConfig()
-    security: SecurityConfig = SecurityConfig()
+    data: DataConfig = Field(default_factory=DataConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    uploads: UploadConfig = Field(default_factory=UploadConfig)
     
     # Application settings
     debug: bool = Field(default=False, description="Enable debug mode")
@@ -145,7 +201,6 @@ class AppConfig(BaseSettings):
         data_dir = Path(_DATA_DIR_CONST)
         
         # Get values from the input dict or use defaults
-        max_upload_size = v.get("max_upload_size", 10 * 1024 * 1024) if isinstance(v, dict) else 10 * 1024 * 1024
         allowed_extensions = v.get("allowed_extensions", [
             '.txt', '.py', '.html', '.md', '.json', '.csv',
             '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.pdf'
@@ -165,7 +220,6 @@ class AppConfig(BaseSettings):
             "memory_doc": data_dir / "memory_doc.md",
             "personal_dir": data_dir / "personal_docs",
             "runbook_dir": data_dir / "personal_docs" / "runbook",
-            "max_upload_size": max_upload_size,
             "allowed_extensions": allowed_extensions,
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,

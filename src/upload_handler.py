@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, UploadFile
 
-from src.upload_limits import format_byte_limit, get_chat_upload_max_bytes
+from src.config import config
+from src.upload_limits import format_byte_limit
 
 
 def secure_filename(filename: str) -> str:
@@ -77,7 +78,7 @@ class UploadHandler:
     def __init__(self, base_dir: str, upload_dir: str):
         self.base_dir = base_dir
         self.upload_dir = upload_dir
-        self.max_upload_size = get_chat_upload_max_bytes()
+        self.max_upload_size = config.uploads.chat
         self.max_concurrent_uploads = 3
         self.cleanup_days = 30
         # Per-IP per-minute cap. save_upload() counts EACH file, and the chat

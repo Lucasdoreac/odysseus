@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import src.config as config_mod
 import src.upload_limits as upload_limits
 
 REPO = Path(__file__).resolve().parent.parent
@@ -31,9 +32,10 @@ _LIMITS = {
 
 
 def _reload_clean(monkeypatch):
-    """Reload upload_limits with all the limit env vars unset."""
+    """Reload config and upload_limits with all the limit env vars unset."""
     for env, _ in _LIMITS.values():
         monkeypatch.delenv(env, raising=False)
+    importlib.reload(config_mod)
     return importlib.reload(upload_limits)
 
 
@@ -41,6 +43,7 @@ def _reload_clean(monkeypatch):
 def _restore_module():
     # Ensure later tests see the env-default module, not a test-mutated reload.
     yield
+    importlib.reload(config_mod)
     importlib.reload(upload_limits)
 
 
@@ -55,6 +58,7 @@ def test_env_override(monkeypatch, name, env, default):
     for e, _ in _LIMITS.values():
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setenv(env, "4242")
+    importlib.reload(config_mod)
     mod = importlib.reload(upload_limits)
     assert getattr(mod, name) == 4242
 
@@ -64,8 +68,9 @@ def test_invalid_env_fails_fast(monkeypatch, env):
     for e, _ in _LIMITS.values():
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setenv(env, "not-an-int")
-    with pytest.raises(ValueError, match=env):
-        importlib.reload(upload_limits)
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match=env):
+        importlib.reload(config_mod)
 
 
 @pytest.mark.parametrize("env", [e for e, _ in _LIMITS.values()])
@@ -73,8 +78,9 @@ def test_non_positive_env_rejected(monkeypatch, env):
     for e, _ in _LIMITS.values():
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setenv(env, "0")
-    with pytest.raises(ValueError, match="greater than 0"):
-        importlib.reload(upload_limits)
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="greater than 0"):
+        importlib.reload(config_mod)
 
 
 def test_routes_import_from_upload_limits_not_local_defs():
