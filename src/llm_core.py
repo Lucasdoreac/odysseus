@@ -1086,30 +1086,36 @@ def _as_content_blocks(content) -> List[Dict]:
     return []
 
 
-def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
-    """Strip Odysseus-only metadata before sending messages to providers.
+from typing import List, Dict
+import logging
 
-    Per the OpenAI chat format: user/system messages must have content; a tool
-    message needs content + tool_call_id; an assistant message may carry content,
-    tool_calls, or both. The old guard required content on every message, which
-    dropped a valid assistant message that has only tool_calls — e.g. the
-    follow-up message _append_tool_results builds for a no-prose native tool call
-    (content=None, since Gemini/Ollama reject tool_calls alongside ""). Dropping
-    it leaves the tool result dangling and breaks the next round.
+logger = logging.getLogger(__name__)
+
+# Alteração 1: Adicionar is_groq na assinatura com default False para não quebrar outros testes/chamadas
+def _sanitize_llm_messages(messages: List[Dict], is_groq: bool = False) -> List[Dict]:
+    """Strip Odysseus-only metadata before sending messages to providers.
+    ...
     """
-    allowed = {"role", "content", "name", "tool_call_id", "tool_calls", "function_call", "reasoning_content"}
+    allowed = {"role", "content", "name", "tool_call_id", "tool_calls", "function_call", "reasoning_content", "n"}
     cleaned = []
+    
     for msg in messages or []:
         if not isinstance(msg, dict):
             continue
+            
         item = {k: v for k, v in msg.items() if k in allowed and v is not None}
+        
+        # Alteração 2: Expurgo determinístico condicionado à flag do provedor
+        if is_groq:
+            item.pop("reasoning_content", None)
+            item.pop("n", None)
+
         role = item.get("role")
         if not role:
             continue
+            
         if role == "assistant":
             # Re-add an explicit content=None when the message is tool-calls-only
-            # (the None was stripped above) so the provider gets the spec-correct
-            # `content: null`, not an omitted key.
             if "content" not in item and item.get("tool_calls"):
                 item["content"] = None
             if "content" in item or item.get("tool_calls"):
